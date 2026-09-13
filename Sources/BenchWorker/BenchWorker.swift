@@ -1,5 +1,6 @@
 import Foundation
 import PhoneFastCore
+import PhoneFastHarness
 import PhoneFastModel
 import TrackRunnerE2B
 import TrackRunnerE4B
@@ -46,6 +47,8 @@ struct BenchWorker {
         var draftDepth = 0
         var serial = false
         var track = "e2b"
+        var pairs = 2
+        var protocolMode = false
 
         var args = Array(CommandLine.arguments.dropFirst())
         func takeValue(_ flag: String) throws -> String {
@@ -62,7 +65,9 @@ struct BenchWorker {
             case "--max-tokens": maxTokens = Int(try takeValue(arg)) ?? maxTokens
             case "--draft-depth": draftDepth = Int(try takeValue(arg)) ?? draftDepth
             case "--track": track = try takeValue(arg)
+            case "--pairs": pairs = Int(try takeValue(arg)) ?? pairs
             case "--serial": serial = true
+            case "--protocol": protocolMode = true
             default: throw BenchWorkerError.usage("unknown argument '\(arg)'")
             }
         }
@@ -72,10 +77,10 @@ struct BenchWorker {
         guard track == "e2b" || track == "e4b" else {
             throw BenchWorkerError.usage("--track must be e2b or e4b")
         }
-        if !serial && assistant == nil {
+        if !serial && !protocolMode && assistant == nil {
             throw BenchWorkerError.usage("--assistant is required unless --serial")
         }
-        if serial { draftDepth = 0 }
+        if serial && !protocolMode { draftDepth = 0 }
         let prompt = try String(contentsOfFile: promptFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else {
@@ -85,6 +90,28 @@ struct BenchWorker {
         let weightsURL = URL(fileURLWithPath: weights)
         let assistantURL = serial ? nil : assistant.map { URL(fileURLWithPath: $0) }
         let imageURL = image.map { URL(fileURLWithPath: $0) }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        if protocolMode {
+            // Same paired protocol the on-device harness runs: pairs of
+            // [serial control, candidate at --draft-depth].
+            let spec = BenchSpec(
+                track: track,
+                weightsDir: weights,
+                assistantDir: assistant,
+                promptText: prompt,
+                imagePath: image,
+                maxTokens: maxTokens,
+                draftDepth: draftDepth,
+                pairs: pairs
+            )
+            let result = try await BenchProtocol.run(spec: spec)
+            FileHandle.standardOutput.write(try encoder.encode(result))
+            FileHandle.standardOutput.write("\n".data(using: .utf8)!)
+            return
+        }
 
         let stats: Gemma4RunStats
         if track == "e2b" {
@@ -122,8 +149,6 @@ struct BenchWorker {
             output: stats.text
         )
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(output)
         FileHandle.standardOutput.write(data)
         FileHandle.standardOutput.write("\n".data(using: .utf8)!)

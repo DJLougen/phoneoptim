@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .library(name: "PhoneFastCore", targets: ["PhoneFastCore"]),
         .library(name: "PhoneFastModel", targets: ["PhoneFastModel"]),
+        .library(name: "PhoneFastHarness", targets: ["PhoneFastHarness"]),
         // Per-track editable runners. benchmark.json assigns Runner/E2B to
         // track e2b and Runner/E4B to track e4b so their editablePaths do not
         // overlap.
@@ -68,10 +69,21 @@ let package = Package(
             ],
             path: "Runner/E4B"
         ),
+        .target(
+            name: "PhoneFastHarness",
+            dependencies: [
+                "PhoneFastCore",
+                "PhoneFastModel",
+                "TrackRunnerE2B",
+                "TrackRunnerE4B",
+            ]
+        ),
         .executableTarget(
             name: "BenchWorker",
             dependencies: [
                 "PhoneFastCore",
+                "PhoneFastHarness",
+                "PhoneFastModel",
                 "TrackRunnerE2B",
                 "TrackRunnerE4B",
             ],
@@ -81,6 +93,7 @@ let package = Package(
             name: "PhoneFastTests",
             dependencies: [
                 "PhoneFastCore",
+                "PhoneFastHarness",
                 "PhoneFastModel",
                 "TrackRunnerE2B",
             ]

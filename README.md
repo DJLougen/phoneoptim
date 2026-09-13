@@ -89,6 +89,27 @@ PHONEOPTIM_VERIFY_ONLY=1 ./setup.sh   # re-verify staged bytes
 Output is a single JSON object: `prefill_tokens`, `prefill_ms`,
 `decode_tokens`, `decode_ms`, `tps`, `mean_draft_len`, `output`.
 
+`--protocol` runs the paired protocol instead: `pairs` × [serial control,
+candidate at `--draft-depth`] over the same prompt, per-role summed
+per-token times, gains clamped to [0.95, 5.0],
+`composite = prefill_gain^0.25 * decode_gain^0.75`, plus thermal state and
+peak phys_footprint per leg.
+
+## On-device bench (iPhone)
+
+```bash
+cd BenchApp && xcodegen generate && cd ..   # regenerate the project
+tools/device-bench.sh                      # build-for-testing, install, test, pull results
+tools/device-push-weights.sh               # copy E2B target+assistant into Documents
+```
+
+The hosted XCTest (`PhoneOptimBenchRunner`) runs `BenchProtocol` inside the
+app container and writes `Documents/results/bench-*.json`; the app reads an
+optional `Documents/bench-spec.json` override. Requires the device
+unlocked; the `increased-memory-limit` entitlement is declared but is
+stripped by personal-team provisioning — watch `physFootprintBytes` in the
+result if jetsam occurs.
+
 ## Layout
 
 | Path | Role | Trust |
@@ -98,5 +119,8 @@ Output is a single JSON object: `prefill_tokens`, `prefill_ms`,
 | `Vendor/mlx-swift-lm/` | Upstream mlx-swift-lm submodule @ `604fae7` | Trusted |
 | `Sources/PhoneFastModel` | Shared Gemma 4 engine wiring | Trusted |
 | `Sources/PhoneFastCore` | Constants, quantization pins | Trusted |
-| `Sources/BenchWorker` | macOS benchmark CLI | Trusted |
+| `Sources/PhoneFastHarness` | Paired serial/candidate bench protocol (shared by CLI + app) | Trusted |
+| `Sources/BenchWorker` | macOS benchmark CLI (`--protocol` runs the paired protocol) | Trusted |
+| `BenchApp/` | iOS app + hosted XCTest runner (XcodeGen `project.yml`) | Tooling |
+| `tools/` | `device-push-weights.sh`, `device-bench.sh` | Tooling |
 | `fixtures/` | sha256 manifests for pinned checkpoints | Trusted |

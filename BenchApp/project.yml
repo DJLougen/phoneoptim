@@ -1,0 +1,55 @@
+name: PhoneOptimBench
+options:
+  bundleIdPrefix: com.djl.phoneoptim
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  phoneoptim:
+    path: ../
+targets:
+  PhoneOptimBench:
+    type: application
+    platform: iOS
+    sources:
+      - path: PhoneOptimBench
+        excludes: ["*.entitlements"]
+    dependencies:
+      - package: phoneoptim
+        product: PhoneFastCore
+      - package: phoneoptim
+        product: PhoneFastModel
+      - package: phoneoptim
+        product: PhoneFastHarness
+      - package: phoneoptim
+        product: TrackRunnerE2B
+    entitlements:
+      path: PhoneOptimBench/PhoneOptimBench.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.djl.phoneoptim.bench
+        DEVELOPMENT_TEAM: M82NWPMA23
+        CODE_SIGN_STYLE: Automatic
+        INFOPLIST_FILE: PhoneOptimBench/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_VERSION: "6.0"
+  PhoneOptimBenchRunner:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PhoneOptimBenchRunner
+    dependencies:
+      - target: PhoneOptimBench
+        embed: false
+      - package: phoneoptim
+        product: PhoneFastHarness
+      - package: phoneoptim
+        product: PhoneFastCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.djl.phoneoptim.bench.runner
+        DEVELOPMENT_TEAM: M82NWPMA23
+        CODE_SIGN_STYLE: Automatic
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/PhoneOptimBench.app/PhoneOptimBench
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
