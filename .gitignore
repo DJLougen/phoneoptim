@@ -1,0 +1,11 @@
+.build/
+.build-worker/
+reference_weights/
+weights/
+benchd-bin/
+mtp-head/
+dflash-head/
+score.json
+*.xcodeproj
+xcuserdata/
+.DS_Store

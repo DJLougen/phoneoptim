@@ -1,0 +1,3 @@
+[submodule "Vendor/mlx-swift-lm"]
+	path = Vendor/mlx-swift-lm
+	url = https://github.com/ml-explore/mlx-swift-lm

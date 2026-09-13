@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 2,
+  "name": "phoneoptim-gemma4-eseries",
+  "description": "Gemma 4 E2B/E4B fully-multimodal MLX Swift inference speedup tracks for iPhone 16 Pro Max (A18 Pro, 8 GB), macOS-verified. E2B target: mlx-community/gemma-4-E2B-it-qat-4bit @ 42f62737af7a9fd8c1d55d79666c1a217be4e2e2 -- a 35-layer text decoder (4:1 sliding_attention:full_attention hybrid, sliding window 512, shared K/V on the last 20 layers, PLE per-layer embeddings, hidden 1536, 8 heads over 1 KV head, tied embeddings, 262144-token vocab) with a vision tower and an audio tower in the checkpoint; the audio tower is NOT yet loadable by mlx-swift-lm and its weights are skipped at load. The paired MTP drafter (mlx-community/gemma-4-E2B-it-qat-assistant-4bit @ 7acb8d02) is a 4-layer shared-KV assistant that drafts blockSize-1 tokens per round. E4B is the same family at 42 layers, hidden 2560, 2 KV heads. Optimize the per-track runner (prompt preparation, cache configuration, draft-depth policy) and the vendored MLX/Metal kernel families the forward pass dispatches. Target quantization is frozen as shipped (4-bit affine, group 64, MLP projections at 8 bits). Direction is +: higher decode tokens/s wins.",
+  "category": "swift",
+  "direction": "+",
+  "tracks": {
+    "e2b": {
+      "trackId": "gemma4-e2b-iphone-mlx-v1",
+      "editablePaths": [
+        "Runner/E2B",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/binary.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/binary_ops.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/copy.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/fp_quantized.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/fp_quantized_nax.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/gather_axis.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/gather_front.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/gemm.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/gemm_nax.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/gemv.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/quantized.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/quantized_nax.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/quantized_utils.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/reduce.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/reduce_utils.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/softmax.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/sort.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/steel_attention.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/steel_attention_nax.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/steel_gemm_fused.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/steel_gemm_fused_nax.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/steel_gemm_gather.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/steel_gemm_gather_nax.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/steel_gemm_splitk.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/steel_gemm_splitk_nax.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/ternary.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/ternary_ops.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/unary.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx-generated/unary_ops.cpp",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/arg_reduce.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/binary.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/binary.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/binary_ops.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/copy.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/copy.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/fp_quantized.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/fp_quantized.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/fp_quantized_nax.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/fp_quantized_nax.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/gemv.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/gemv.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/indexing/gather_axis.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/indexing/gather_front.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/indexing/indexing.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/quantized.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/quantized.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/quantized_nax.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/quantized_nax.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/quantized_utils.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/reduce.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/reduce.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/reduce_utils.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/rms_norm.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/rope.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/scaled_dot_product_attention.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/sdpa_vector.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/softmax.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/softmax.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/sort.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/sort.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/steel/attn",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/steel/gemm",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/ternary.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/ternary.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/ternary_ops.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/unary.h",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/unary.metal",
+        "Vendor/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels/unary_ops.h"
+      ],
+      "target": {
+        "repository": "mlx-community/gemma-4-E2B-it-qat-4bit",
+        "revision": "42f62737af7a9fd8c1d55d79666c1a217be4e2e2",
+        "manifest": "fixtures/reference_gemma4_e2b_qat4bit.sha256"
+      },
+      "assistant": {
+        "repository": "mlx-community/gemma-4-E2B-it-qat-assistant-4bit",
+        "revision": "7acb8d02364777be103dbf8c8dcb007f55f717e6",
+        "manifest": "fixtures/gemma4_e2b_assistant.sha256"
+      }
+    },
+    "e4b": {
+      "trackId": "gemma4-e4b-iphone-mlx-v1",
+      "editablePaths": [
+        "Runner/E4B"
+      ],
+      "target": {
+        "repository": "mlx-community/gemma-4-E4B-it-qat-4bit",
+        "revision": "0f35c6f6d386f7f74e628bd7c6526ce531212300",
+        "manifest": "fixtures/reference_gemma4_e4b_qat4bit.sha256"
+      },
+      "assistant": {
+        "repository": "mlx-community/gemma-4-E4B-it-qat-assistant-4bit",
+        "revision": "dac8da1a066d5e00bc085e281fa73f2d5ec2fbe0",
+        "manifest": "fixtures/gemma4_e4b_assistant.sha256"
+      }
+    }
+  },
+  "setupCommand": [
+    "bash",
+    "-c",
+    "./setup.sh"
+  ],
+  "benchmarkCommand": [
+    "bash",
+    "-c",
+    ".build/release/bench-worker --weights reference_weights/gemma-4-E2B-it-qat-4bit --assistant reference_weights/gemma-4-E2B-it-qat-assistant-4bit --prompt correctness_prompts/short.txt --max-tokens 64 --draft-depth 3"
+  ],
+  "scorePath": "score.json"
+}

@@ -1,0 +1,13 @@
+# SHA256 manifest for mlx-community/gemma-4-E2B-it-qat-assistant-4bit.
+# Revision: 7acb8d02364777be103dbf8c8dcb007f55f717e6
+#
+# <sha256> <bytes> <path>; LFS digests are the HF-published oid,
+# non-LFS digests are computed over the resolved bytes.
+e98b58818661555734f406170f6bf2db54ad24530206d64ef174b9b9387ad9c8 1913 README.md
+2f1b4d75d067bae3fe44e676721c7f077d243bc007156cb9c2f8b5836613d082 17336 chat_template.jinja
+d33c99ed9cb54146d0175ab96110cbebd7217050d4fece83062d4ff243db4e8b 2961 config.json
+fb53f4c64e58896a63472e8eb304397db4a39453e1da0f5d57625ec5a8c1050e 209 generation_config.json
+41b9c66bde3a37eef7f59c32f5b97f8b2e1ebaa5150aecd549f39e12626d9cb8 44790955 model.safetensors
+fc05f5da6014e13ad13b684a770d23270dcac716c6c12b799268686d0b291cc6 6789 model.safetensors.index.json
+75a6583c1a418e2bbd79c60d95d28e0f5bf549ad3f2990b5bdb5238c6c2bf70c 32169440 tokenizer.json
+2084566efe9ae430fa5fa7f901373d9c2e027865a417e119c3598fdcc69a35f8 2682 tokenizer_config.json
