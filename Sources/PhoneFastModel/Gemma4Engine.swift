@@ -35,6 +35,18 @@ public struct Gemma4RunStats: Sendable {
 ///
 /// Trusted shared model code: per-track editable seams live in `Runner/E2B`
 /// and `Runner/E4B`.
+/// Result of a teacher-forced check: the model is fed the golden sequence
+/// and must argmax to each next golden token. A drift tripwire — unlike
+/// free-running text compare it localizes the first divergent position.
+public struct GoldenCheckResult: Sendable {
+    public var matched: Int = 0
+    public var total: Int = 0
+    /// Index into the expected-token span of the first argmax that missed.
+    public var firstDivergence: Int? = nil
+
+    public init() {}
+}
+
 public final class Gemma4Engine: @unchecked Sendable {
 
     private var context: ModelContext?
@@ -47,8 +59,8 @@ public final class Gemma4Engine: @unchecked Sendable {
     public func load(weights: URL, assistant: URL?) async throws {
         await Gemma4AssistantRegistration.register()
         let tokenizerLoader = #huggingFaceTokenizerLoader()
-        context = try await VLMModelFactory.shared.load(
-            from: weights, using: tokenizerLoader)
+        context = try await loadGemma4ContextLowMemory(
+            modelDirectory: weights, tokenizerLoader: tokenizerLoader)
         if let assistant {
             let drafterContext = try await MTPDrafterModelFactory.shared.load(
                 from: assistant, using: tokenizerLoader)
@@ -111,6 +123,64 @@ public final class Gemma4Engine: @unchecked Sendable {
             }
         }
         return stats
+    }
+
+    /// Greedy generation returning raw token ids plus the prepared prompt
+    /// ids (chat template applied). Used to mint golden files.
+    public func generatedTokenIds(
+        prompt: String,
+        image: URL?,
+        maxTokens: Int
+    ) async throws -> (promptTokenIds: [Int], generated: [Int]) {
+        guard let context else { throw Gemma4EngineError.notLoaded }
+        var images: [UserInput.Image] = []
+        if let image {
+            images.append(.url(image))
+        }
+        let input = try await context.processor.prepare(
+            input: UserInput(prompt: prompt, images: images))
+        let promptIds = input.text.tokens.asArray(Int32.self).map(Int.init)
+        var generated: [Int] = []
+        let stream = try MLXLMCommon.generateTokens(
+            input: input,
+            parameters: GenerateParameters(maxTokens: maxTokens, temperature: 0),
+            context: context)
+        for await event in stream {
+            if case .token(let t) = event { generated.append(t) }
+        }
+        return (promptIds, generated)
+    }
+
+    /// One forward over `promptTokenIds + expectedTokenIds`; each position's
+    /// argmax must equal the next golden token. `firstDivergence` is the
+    /// index within `expectedTokenIds` where the model first disagrees.
+    public func teacherForcedCheck(
+        promptTokenIds: [Int],
+        expectedTokenIds: [Int]
+    ) -> GoldenCheckResult {
+        var result = GoldenCheckResult()
+        guard let context, !promptTokenIds.isEmpty, !expectedTokenIds.isEmpty else {
+            return result
+        }
+        let all = promptTokenIds + expectedTokenIds
+        let tokens = MLXArray(all.map(Int32.init))[.newAxis]
+        let out = context.model(
+            LMInput.Text(tokens: tokens), cache: nil, state: nil)
+        // logits[0, i, :].argmax predicts token i+1; the expected span starts
+        // at the last prompt position.
+        let start = promptTokenIds.count - 1
+        let preds = argMax(out.logits, axis: -1)[0, start..<(all.count - 1)]
+        let expected = MLXArray(expectedTokenIds.map(Int32.init))
+        let hits = (preds .== expected).asType(.int32).asArray(Int32.self)
+        for (i, hit) in hits.enumerated() {
+            if hit != 0 {
+                result.matched += 1
+            } else if result.firstDivergence == nil {
+                result.firstDivergence = i
+            }
+        }
+        result.total = hits.count
+        return result
     }
 }
 

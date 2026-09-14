@@ -9,3 +9,4 @@ score.json
 *.xcodeproj
 xcuserdata/
 .DS_Store
+benchmark-result-*.json

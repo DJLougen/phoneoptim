@@ -1,0 +1,35 @@
+# benchmark-e2b.yml -- gemma4-e2b-iphone-mlx-v1 ranked pipeline.
+# benchmark.json's runner.workflow names this file. Yukon dispatches it once
+# per submission: provision the pinned E2B checkpoints, run the paired
+# serial/MTP protocol on the host's Metal GPU, emit score.json.
+#
+# No secrets: the checkpoints are public mlx-community repos fetched
+# anonymously via `hf`, and the golden + prompt are checked into the repo.
+name: phoneoptim-benchmark-e2b
+
+on:
+  workflow_dispatch:
+
+jobs:
+  measure-and-score:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install hf CLI
+        run: python3 -m pip install -U "huggingface_hub[cli]"
+
+      - name: Provision pinned weights + build
+        run: PHONEOPTIM_TRACK=e2b ./setup.sh
+
+      - name: Measure and score
+        run: ./tools/measure-and-score.sh --track e2b
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ github.run_id }}
+          path: |
+            score.json
+            benchmark-result-e2b.json
+          if-no-files-found: warn

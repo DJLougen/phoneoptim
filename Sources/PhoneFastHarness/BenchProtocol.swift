@@ -1,10 +1,16 @@
 import Foundation
+import MLX
 import PhoneFastCore
 import PhoneFastModel
 import TrackRunnerE2B
 import TrackRunnerE4B
 #if os(iOS)
     import MachO
+    import OSLog
+#endif
+
+#if canImport(os)
+    import os
 #endif
 
 /// The benchmark spec: one prompt, one track, a draft depth for the
@@ -20,6 +26,12 @@ public struct BenchSpec: Codable, Sendable {
     public var maxTokens: Int = 64
     public var draftDepth: Int = 3
     public var pairs: Int = 2
+    /// Optional golden JSON (`promptTokenIds` + `expectedTokenIds`) checked
+    /// teacher-forced after warm-up. Nil disables the check.
+    public var goldenPath: String? = nil
+    /// Seconds the GPU must idle after warm-up before timed legs start, on
+    /// top of waiting for a nominal thermal state. 0 disables the cool gate.
+    public var coolSeconds: Double = 0
 
     public init(
         track: String = "e2b",
@@ -29,7 +41,9 @@ public struct BenchSpec: Codable, Sendable {
         imagePath: String? = nil,
         maxTokens: Int = 64,
         draftDepth: Int = 3,
-        pairs: Int = 2
+        pairs: Int = 2,
+        goldenPath: String? = nil,
+        coolSeconds: Double = 0
     ) {
         self.track = track
         self.weightsDir = weightsDir
@@ -39,11 +53,13 @@ public struct BenchSpec: Codable, Sendable {
         self.maxTokens = maxTokens
         self.draftDepth = draftDepth
         self.pairs = pairs
+        self.goldenPath = goldenPath
+        self.coolSeconds = coolSeconds
     }
 
     private enum CodingKeys: String, CodingKey {
         case track, weightsDir, assistantDir, promptText, imagePath
-        case maxTokens, draftDepth, pairs
+        case maxTokens, draftDepth, pairs, goldenPath, coolSeconds
     }
 
     /// Lenient decode: any field may be omitted and falls back to the
@@ -58,6 +74,22 @@ public struct BenchSpec: Codable, Sendable {
         maxTokens = try c.decodeIfPresent(Int.self, forKey: .maxTokens) ?? 64
         draftDepth = try c.decodeIfPresent(Int.self, forKey: .draftDepth) ?? 3
         pairs = try c.decodeIfPresent(Int.self, forKey: .pairs) ?? 2
+        goldenPath = try c.decodeIfPresent(String.self, forKey: .goldenPath)
+        coolSeconds = try c.decodeIfPresent(Double.self, forKey: .coolSeconds) ?? 0
+    }
+}
+
+/// Checked-in golden: the templated prompt ids and the greedy continuation
+/// the model must produce when teacher-forced through one forward.
+public struct GoldenFile: Codable, Sendable {
+    public var prompt: String?
+    public var promptTokenIds: [Int]
+    public var expectedTokenIds: [Int]
+
+    public init(prompt: String? = nil, promptTokenIds: [Int], expectedTokenIds: [Int]) {
+        self.prompt = prompt
+        self.promptTokenIds = promptTokenIds
+        self.expectedTokenIds = expectedTokenIds
     }
 }
 
@@ -94,6 +126,16 @@ public struct BenchResult: Codable, Sendable {
     public var decodeGain: Double
     public var composite: Double
     public var outputsMatch: Bool
+    /// True when a leg produced only pad/whitespace — such a run is a
+    /// failure even if both legs happened to agree.
+    public var degenerateOutput: Bool
+    /// Teacher-forced golden match rate in [0,1]; nil when no golden ran.
+    public var goldenMatchRate: Double?
+    /// First divergent position inside the expected-token span; nil on a
+    /// perfect match or when no golden ran.
+    public var goldenFirstDivergence: Int?
+    /// Seconds spent inside the cool-down gate before timed legs.
+    public var coolGateMs: Double?
     public var serialText: String
     public var candidateText: String
 }
@@ -130,9 +172,50 @@ public enum BenchProtocol {
         ProcessInfo.processInfo.thermalState.rawValue
     }
 
-    /// Run the full paired protocol. Loads the model once, warms up with an
-    /// 8-token generate, then runs `spec.pairs` [serial, candidate] pairs.
-    public static func run(spec: BenchSpec) async throws -> BenchResult {
+    /// Bytes the process may still use before jetsam kills it. iOS only;
+    /// 0 on macOS where no such budget exists.
+    public static func procAvailableMemory() -> UInt64 {
+        #if os(iOS)
+            return UInt64(os_proc_available_memory())
+        #else
+            return 0
+        #endif
+    }
+
+    /// Run the full paired protocol. Loads the model once, warms up, then
+    /// runs `spec.pairs` [serial, candidate] pairs. `progress` is invoked with
+    /// a timestamped line after every stage so a mid-run kill leaves a trail.
+    public static func run(
+        spec: BenchSpec,
+        progress: @escaping @Sendable (String) -> Void = { _ in }
+    ) async throws -> BenchResult {
+        func mark(_ s: String) {
+            progress(
+                "\(String(format: "%.1f", Date().timeIntervalSince1970)) \(s)"
+                    + " [phys \(physFootprint() / 1_048_576)MB"
+                    + " avail \(procAvailableMemory() / 1_048_576)MB"
+                    + " mlx \(Memory.activeMemory / 1_048_576)+\(Memory.cacheMemory / 1_048_576)MB"
+                    + " thermal \(thermalState())]")
+        }
+        // Cap MLX's buffer cache + total allocation; on-device runs run
+        // without the increased-memory-limit entitlement, so the process must
+        // stay well under the default jetsam ceiling.
+        #if os(iOS)
+            Memory.cacheLimit = 256 * 1024 * 1024
+            Memory.memoryLimit = 4 * 1024 * 1024 * 1024
+        #endif
+        mark("start track=\(spec.track) depth=\(spec.draftDepth) pairs=\(spec.pairs)")
+
+        // Sample footprint every 2s during load so a mid-load kill leaves a
+        // rising curve in the log.
+        let sampling = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                mark("sample")
+            }
+        }
+        defer { sampling.cancel() }
+
         let weightsURL = URL(fileURLWithPath: spec.weightsDir)
         let assistantURL = spec.assistantDir.map { URL(fileURLWithPath: $0) }
         let imageURL = spec.imagePath.map { URL(fileURLWithPath: $0) }
@@ -140,6 +223,7 @@ public enum BenchProtocol {
         // One runner instance: candidate legs use the drafter, serial legs
         // bypass it via draftDepth 0. The drafter stays resident for both.
         let runLeg: (Int) async throws -> Gemma4RunStats
+        let checkGolden: (GoldenFile) -> GoldenCheckResult
         if spec.track == "e2b" {
             let runner = TrackRunnerE2B.TrackGemma4Runner()
             try await runner.load(weights: weightsURL, assistant: assistantURL)
@@ -147,6 +231,11 @@ public enum BenchProtocol {
                 try await runner.run(
                     prompt: spec.promptText, image: imageURL,
                     maxTokens: spec.maxTokens, draftDepth: depth)
+            }
+            checkGolden = { golden in
+                runner.teacherForcedCheck(
+                    promptTokenIds: golden.promptTokenIds,
+                    expectedTokenIds: golden.expectedTokenIds)
             }
         } else {
             let runner = TrackRunnerE4B.TrackGemma4Runner()
@@ -156,7 +245,13 @@ public enum BenchProtocol {
                     prompt: spec.promptText, image: imageURL,
                     maxTokens: spec.maxTokens, draftDepth: depth)
             }
+            checkGolden = { golden in
+                runner.teacherForcedCheck(
+                    promptTokenIds: golden.promptTokenIds,
+                    expectedTokenIds: golden.expectedTokenIds)
+            }
         }
+        mark("loaded")
 
         // Warm-up so Metal JIT compilation is not timed.
         let warmStart = Date()
@@ -165,14 +260,47 @@ public enum BenchProtocol {
         // Metal kernels are shared), capped short via a second serial pass is
         // unnecessary; single warm-up matches the track contract.
         let warmupMs = Date().timeIntervalSince(warmStart) * 1000
+        mark("warmup done \(Int(warmupMs))ms")
+
+        // Teacher-forced golden check (drift tripwire). Runs after warm-up so
+        // it measures the same kernel path the timed legs take.
+        var goldenCheck: GoldenCheckResult?
+        if let goldenPath = spec.goldenPath {
+            let golden = try JSONDecoder().decode(
+                GoldenFile.self,
+                from: Data(contentsOf: URL(fileURLWithPath: goldenPath)))
+            let check = checkGolden(golden)
+            goldenCheck = check
+            mark(
+                "golden matched=\(check.matched)/\(check.total)"
+                    + " firstDivergence=\(check.firstDivergence.map(String.init) ?? "none")")
+        }
+
+        // Cool gate: wait for nominal thermal state, then idle the GPU for
+        // spec.coolSeconds so timed legs don't run on a hot chip.
+        var coolGateMs: Double?
+        if spec.coolSeconds > 0 {
+            let gateStart = Date()
+            let deadline = gateStart.addingTimeInterval(300)
+            while thermalState() != 0 && Date() < deadline {
+                try? await Task.sleep(for: .seconds(2))
+            }
+            try? await Task.sleep(for: .seconds(spec.coolSeconds))
+            coolGateMs = Date().timeIntervalSince(gateStart) * 1000
+            mark("cool gate done \(Int(coolGateMs!))ms")
+        }
 
         var legs: [LegRecord] = []
         for pair in 0..<spec.pairs {
             for role in ["serial", "candidate"] {
                 let depth = role == "serial" ? 0 : spec.draftDepth
                 let thermalBefore = thermalState()
+                mark("leg \(role) pair=\(pair) begin")
                 let stats = try await runLeg(depth)
                 let thermalAfter = thermalState()
+                mark(
+                    "leg \(role) pair=\(pair) end prefill=\(Int(stats.prefillMilliseconds))ms/\(stats.prefillTokens)tok decode=\(Int(stats.decodeMilliseconds))ms/\(stats.decodeTokens)tok"
+                )
                 legs.append(
                     LegRecord(
                         role: role,
@@ -233,6 +361,15 @@ public enum BenchProtocol {
         let serialText = serialLegs.last?.text ?? ""
         let candidateText = candLegs.last?.text ?? ""
 
+        // Empty or all-pad output is a degenerate run: not scored as valid
+        // even if both legs agree.
+        func isDegenerate(_ text: String) -> Bool {
+            text.replacingOccurrences(of: "<pad>", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+        }
+        let degenerate = isDegenerate(serialText) || isDegenerate(candidateText)
+
         return BenchResult(
             device: device,
             osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
@@ -246,7 +383,13 @@ public enum BenchProtocol {
             prefillGain: prefillGain,
             decodeGain: decodeGain,
             composite: composite,
-            outputsMatch: serialText == candidateText,
+            outputsMatch: serialText == candidateText && !degenerate,
+            degenerateOutput: degenerate,
+            goldenMatchRate: goldenCheck.map {
+                $0.total > 0 ? Double($0.matched) / Double($0.total) : 0
+            },
+            goldenFirstDivergence: goldenCheck?.firstDivergence,
+            coolGateMs: coolGateMs,
             serialText: serialText,
             candidateText: candidateText
         )

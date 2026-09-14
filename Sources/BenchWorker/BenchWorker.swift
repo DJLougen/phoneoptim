@@ -49,6 +49,9 @@ struct BenchWorker {
         var track = "e2b"
         var pairs = 2
         var protocolMode = false
+        var emitGolden: String?
+        var goldenPath: String?
+        var coolSeconds: Double = 0
 
         var args = Array(CommandLine.arguments.dropFirst())
         func takeValue(_ flag: String) throws -> String {
@@ -68,6 +71,9 @@ struct BenchWorker {
             case "--pairs": pairs = Int(try takeValue(arg)) ?? pairs
             case "--serial": serial = true
             case "--protocol": protocolMode = true
+            case "--emit-golden": emitGolden = try takeValue(arg)
+            case "--golden": goldenPath = try takeValue(arg)
+            case "--cool-seconds": coolSeconds = Double(try takeValue(arg)) ?? 0
             default: throw BenchWorkerError.usage("unknown argument '\(arg)'")
             }
         }
@@ -77,7 +83,7 @@ struct BenchWorker {
         guard track == "e2b" || track == "e4b" else {
             throw BenchWorkerError.usage("--track must be e2b or e4b")
         }
-        if !serial && !protocolMode && assistant == nil {
+        if !serial && !protocolMode && emitGolden == nil && assistant == nil {
             throw BenchWorkerError.usage("--assistant is required unless --serial")
         }
         if serial && !protocolMode { draftDepth = 0 }
@@ -105,11 +111,41 @@ struct BenchWorker {
                 imagePath: image,
                 maxTokens: maxTokens,
                 draftDepth: draftDepth,
-                pairs: pairs
+                pairs: pairs,
+                goldenPath: goldenPath,
+                coolSeconds: coolSeconds
             )
             let result = try await BenchProtocol.run(spec: spec)
             FileHandle.standardOutput.write(try encoder.encode(result))
             FileHandle.standardOutput.write("\n".data(using: .utf8)!)
+            return
+        }
+
+        if let emitGolden {
+            // Mint a golden: greedy serial run, record the templated prompt
+            // ids and the generated ids for the teacher-forced check.
+            let ids: (promptTokenIds: [Int], generated: [Int])
+            if track == "e2b" {
+                let runner = TrackRunnerE2B.TrackGemma4Runner()
+                try await runner.load(weights: weightsURL, assistant: nil)
+                ids = try await runner.generatedTokenIds(
+                    prompt: prompt, image: imageURL, maxTokens: maxTokens)
+            } else {
+                let runner = TrackRunnerE4B.TrackGemma4Runner()
+                try await runner.load(weights: weightsURL, assistant: nil)
+                ids = try await runner.generatedTokenIds(
+                    prompt: prompt, image: imageURL, maxTokens: maxTokens)
+            }
+            let golden = GoldenFile(
+                prompt: prompt,
+                promptTokenIds: ids.promptTokenIds,
+                expectedTokenIds: ids.generated)
+            try encoder.encode(golden).write(
+                to: URL(fileURLWithPath: emitGolden),
+                options: .atomic)
+            FileHandle.standardOutput.write(
+                "wrote golden (\(ids.promptTokenIds.count) prompt + \(ids.generated.count) generated tokens) to \(emitGolden)\n"
+                    .data(using: .utf8)!)
             return
         }
 

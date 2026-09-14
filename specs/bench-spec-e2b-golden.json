@@ -1,0 +1,11 @@
+{
+  "track": "e2b",
+  "weightsDir": "gemma-4-E2B-it-qat-4bit",
+  "assistantDir": "gemma-4-E2B-it-qat-assistant-4bit",
+  "promptText": "Explain why the sky is blue in two sentences.",
+  "maxTokens": 64,
+  "draftDepth": 3,
+  "pairs": 2,
+  "goldenPath": "golden-e2b-sky.json",
+  "coolSeconds": 5
+}

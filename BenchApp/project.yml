@@ -32,18 +32,19 @@ targets:
         INFOPLIST_FILE: PhoneOptimBench/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_VERSION: "6.0"
+        # Single binary so the test bundle resolves package symbols (including
+        # MLX's C++ globals) from the host through BUNDLE_LOADER.
+        ENABLE_DEBUG_DYLIB: NO
   PhoneOptimBenchRunner:
     type: bundle.unit-test
     platform: iOS
     sources:
       - path: PhoneOptimBenchRunner
+    # No package products here: linking them again would put a second copy of
+    # MLX in the process, with its own stream/encoder state and allocator.
     dependencies:
       - target: PhoneOptimBench
         embed: false
-      - package: phoneoptim
-        product: PhoneFastHarness
-      - package: phoneoptim
-        product: PhoneFastCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.djl.phoneoptim.bench.runner

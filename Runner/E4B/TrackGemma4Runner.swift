@@ -23,4 +23,21 @@ public final class TrackGemma4Runner {
             prompt: prompt, image: image, maxTokens: maxTokens,
             draftDepth: draftDepth)
     }
+
+    public func generatedTokenIds(
+        prompt: String,
+        image: URL?,
+        maxTokens: Int
+    ) async throws -> (promptTokenIds: [Int], generated: [Int]) {
+        try await engine.generatedTokenIds(
+            prompt: prompt, image: image, maxTokens: maxTokens)
+    }
+
+    public func teacherForcedCheck(
+        promptTokenIds: [Int],
+        expectedTokenIds: [Int]
+    ) -> GoldenCheckResult {
+        engine.teacherForcedCheck(
+            promptTokenIds: promptTokenIds, expectedTokenIds: expectedTokenIds)
+    }
 }
